@@ -12,7 +12,7 @@ public class AttendanceDAO {
     private static final ZoneId MANILA_TIMEZONE = ZoneId.of("Asia/Manila");
     private static final String DB_URL = "jdbc:mysql://localhost:3306/payrollsystem_db";
     private static final String DB_USER = "root";
-    private static final String DB_PASSWORD = "";
+    private static final String DB_PASSWORD = "Mmdc_2025*";
     
     private DatabaseConnection databaseConnection;
 

@@ -613,7 +613,8 @@ public class DatabaseConnection {
             // Try to create a connection and test if it's valid (5 second timeout)
             return conn != null && conn.isValid(5);
         } catch (SQLException e) {
-            // If anything goes wrong, return false
+            System.err.println("DB connection failed: " + e.getMessage());
+            System.err.println("SQLState: " + e.getSQLState() + " | Error code: " + e.getErrorCode());
             return false;
         }
         // The "try-with-resources" automatically closes the connection when done
