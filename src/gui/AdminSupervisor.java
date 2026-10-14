@@ -299,6 +299,8 @@ public class AdminSupervisor extends JFrame {
         int response = JOptionPane.showConfirmDialog(this, "Are you sure you want to log out?", "Confirm Logout", JOptionPane.YES_NO_OPTION);
         if (response == JOptionPane.YES_OPTION) {
             if (loggedInUser != null) {
+                new DAOs.UserAuthenticationDAO()
+                    .logAuthenticationAttempt(loggedInUser.getEmail(), true, "User logged out");
                 loggedInUser.endSession();
             }
             new Login().setVisible(true);

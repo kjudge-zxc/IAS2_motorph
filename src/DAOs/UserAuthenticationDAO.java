@@ -1,18 +1,18 @@
 package DAOs;
 
 import Models.UserAuthenticationModel;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.List;
 import java.util.ArrayList;
-import java.util.Map;
-import java.util.HashMap;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Data Access Object for user authentication operations
@@ -27,6 +27,9 @@ public class UserAuthenticationDAO {
     private static final String DB_URL = "jdbc:mysql://localhost:3306/payrollsystem_db";
     private static final String DB_USER = "root";
     private static final String DB_PASSWORD = "Mmdc_2025*";
+
+    // Audit log writer for security events
+    private final AuditLogDAO auditLogDAO = new AuditLogDAO();   
     
     // Get database connection
     private Connection getConnection() throws SQLException {
@@ -801,16 +804,42 @@ public class UserAuthenticationDAO {
      * @param success Whether login was successful
      * @param details Additional details about the attempt
      */
-    public void logAuthenticationAttempt(String email, boolean success, String details) {
+        public void logAuthenticationAttempt(String email, boolean success, String details) {
+        // Console output retained for development visibility
         try {
-            LocalDateTime manilaTime = getManilaTime();
-            String logMessage = String.format("[AUTH] %s - Email: %s, Success: %s, Details: %s",
-                manilaTime, email, success, details);
-            System.out.println(logMessage);
-            
+            System.out.println(String.format("[AUTH] %s - Email: %s, Success: %s, Details: %s",
+                getManilaTime(), email, success, details));
         } catch (Exception e) {
             System.err.println("Error logging authentication attempt: " + e.getMessage());
         }
+
+        // Durable audit record
+        try {
+            Integer employeeId = null;
+            UserAuthenticationModel user = getUserByEmail(email);
+            if (user != null) {
+                employeeId = user.getEmployeeId();
+            }
+            auditLogDAO.log(email, employeeId, mapEventType(success, details), success, details);
+        } catch (Exception e) {
+            System.err.println("[AUDIT] Could not record event: " + e.getMessage());
+        }
+    }
+
+    /** Derives a structured event type from the existing free-text details. */
+    private String mapEventType(boolean success, String details) {
+        if (details == null) {
+            return success ? AuditLogDAO.LOGIN_SUCCESS : AuditLogDAO.LOGIN_FAILED;
+        }
+        String d = details.toLowerCase();
+        if (d.contains("successful login")) return AuditLogDAO.LOGIN_SUCCESS;
+        if (d.contains("logged out"))       return AuditLogDAO.LOGOUT;
+        if (d.contains("password updated")) return AuditLogDAO.PASSWORD_CHANGED;
+        if (d.contains("account created"))  return AuditLogDAO.ACCOUNT_CREATED;
+        if (d.contains("deactivated"))      return AuditLogDAO.ACCOUNT_DEACTIVATED;
+        if (d.contains("activated"))        return AuditLogDAO.ACCOUNT_ACTIVATED;
+        if (d.contains("database error"))   return AuditLogDAO.AUTH_ERROR;
+        return success ? AuditLogDAO.LOGIN_SUCCESS : AuditLogDAO.LOGIN_FAILED;
     }
     
     /**
