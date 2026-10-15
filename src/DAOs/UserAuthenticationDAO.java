@@ -29,7 +29,11 @@ public class UserAuthenticationDAO {
     private static final String DB_PASSWORD = "Mmdc_2025*";
 
     // Audit log writer for security events
-    private final AuditLogDAO auditLogDAO = new AuditLogDAO();   
+    private final AuditLogDAO auditLogDAO = new AuditLogDAO();
+    
+    // Account lockout policy 
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final int LOCKOUT_MINUTES = 15;
     
     // Get database connection
     private Connection getConnection() throws SQLException {
@@ -166,6 +170,13 @@ public class UserAuthenticationDAO {
             return null;
         }
         
+        // Lockout check runs before password verification, so a locked account
+        // cannot be accessed even if the correct password is supplied
+        if (isAccountLocked(email)) {
+            logAuthenticationAttempt(email, false, "Account locked");
+            return null;
+        }
+        
         String sql = """
             SELECT e.employeeId, e.email, e.passwordHash, e.userRole, e.status, 
                    e.lastLogin, e.firstName, e.lastName, p.position, p.department
@@ -205,7 +216,11 @@ public class UserAuthenticationDAO {
                 } else {
                     // Increment login attempts on failed password
                     incrementLoginAttempts(email);
-                    logAuthenticationAttempt(email, false, "Invalid password");
+                    if (isAccountLocked(email)) {
+                        logAuthenticationAttempt(email, false, "Invalid password - account locked");
+                    } else {
+                        logAuthenticationAttempt(email, false, "Invalid password");
+                    }
                 }
             } else {
                 logAuthenticationAttempt(email, false, "Email not found");
@@ -403,7 +418,27 @@ public class UserAuthenticationDAO {
      * @param email Email address
      */
     private void incrementLoginAttempts(String email) {
-        System.out.println("Login attempt failed for email: " + email + " at " + getManilaTime());
+        // MySQL evaluates SET assignments left to right, so failedAttempts in the
+        // CASE below is already the incremented value
+        String sql = """
+            UPDATE employee
+               SET failedAttempts = failedAttempts + 1,
+                   lockedUntil = CASE
+                       WHEN failedAttempts >= ? THEN DATE_ADD(NOW(), INTERVAL ? MINUTE)
+                       ELSE lockedUntil
+                   END
+             WHERE email = ?
+            """;
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, MAX_FAILED_ATTEMPTS);
+            pstmt.setInt(2, LOCKOUT_MINUTES);
+            pstmt.setString(3, email);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Error incrementing login attempts: " + e.getMessage());
+        }
     }
     
     /**
@@ -411,7 +446,15 @@ public class UserAuthenticationDAO {
      * @param employeeId Employee ID
      */
     private void resetLoginAttempts(int employeeId) {
-        System.out.println("Login attempts reset for employee: " + employeeId + " at " + getManilaTime());
+        String sql = "UPDATE employee SET failedAttempts = 0, lockedUntil = NULL WHERE employeeId = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, employeeId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.err.println("Error resetting login attempts: " + e.getMessage());
+        }
     }
     
     /**
@@ -420,7 +463,21 @@ public class UserAuthenticationDAO {
      * @return true if account is locked
      */
     public boolean isAccountLocked(String email) {
-        return false; // Implement based on your requirements
+        String sql = "SELECT (lockedUntil IS NOT NULL AND lockedUntil > NOW()) AS locked " +
+                     "FROM employee WHERE email = ?";
+
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, email);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getBoolean("locked");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error checking account lock status: " + e.getMessage());
+        }
+        return false;
     }
     
     // PASSWORD MANAGEMENT WITH MANILA TIMEZONE
@@ -835,6 +892,7 @@ public class UserAuthenticationDAO {
         if (d.contains("successful login")) return AuditLogDAO.LOGIN_SUCCESS;
         if (d.contains("logged out"))       return AuditLogDAO.LOGOUT;
         if (d.contains("password updated")) return AuditLogDAO.PASSWORD_CHANGED;
+        if (d.contains("account locked"))   return AuditLogDAO.ACCOUNT_LOCKED;    
         if (d.contains("account created"))  return AuditLogDAO.ACCOUNT_CREATED;
         if (d.contains("deactivated"))      return AuditLogDAO.ACCOUNT_DEACTIVATED;
         if (d.contains("activated"))        return AuditLogDAO.ACCOUNT_ACTIVATED;

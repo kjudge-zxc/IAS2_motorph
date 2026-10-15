@@ -149,10 +149,9 @@ public class Login extends javax.swing.JFrame {
                 
                 // Check if account exists but is locked
                 if (userAuthDAO.emailExists(email)) {
-                    UserAuthenticationModel existingUser = userAuthDAO.getUserByEmail(email);
-                    if (existingUser != null && existingUser.isAccountLocked()) {
+                    if (userAuthDAO.isAccountLocked(email)) {
                         JOptionPane.showMessageDialog(this, 
-                            "Account is locked due to multiple failed login attempts.", 
+                            "Account is locked due to multiple failed login attempts.\nPlease try again in 15 minutes.", 
                             "Account Locked", 
                             JOptionPane.WARNING_MESSAGE);
                     } else {

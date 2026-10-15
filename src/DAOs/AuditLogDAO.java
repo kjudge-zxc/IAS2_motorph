@@ -3,9 +3,7 @@ package DAOs;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.sql.Types;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,10 +26,11 @@ public class AuditLogDAO {
     public static final String ACCOUNT_DEACTIVATED  = "ACCOUNT_DEACTIVATED";
     public static final String ACCOUNT_ACTIVATED    = "ACCOUNT_ACTIVATED";
     public static final String AUTH_ERROR           = "AUTH_ERROR";
+    public static final String ACCOUNT_LOCKED       = "ACCOUNT_LOCKED";
 
     private static final String INSERT_SQL =
         "INSERT INTO audit_log (eventTime, email, employeeId, eventType, outcome, details) " +
-        "VALUES (?, ?, ?, ?, ?, ?)";
+        "VALUES (CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+08:00'), ?, ?, ?, ?, ?)";
 
     private static final String RECENT_SQL =
         "SELECT auditId, eventTime, email, employeeId, eventType, outcome, details " +
@@ -47,20 +46,17 @@ public class AuditLogDAO {
         try (Connection conn = DatabaseConnection.getConnection();
              PreparedStatement stmt = conn.prepareStatement(INSERT_SQL)) {
 
-            stmt.setTimestamp(1, Timestamp.valueOf(
-                    LocalDateTime.now(DatabaseConnection.MANILA_TIMEZONE)));
+            if (email == null) stmt.setNull(1, Types.VARCHAR);
+            else stmt.setString(1, email);
 
-            if (email == null) stmt.setNull(2, Types.VARCHAR);
-            else stmt.setString(2, email);
+            if (employeeId == null) stmt.setNull(2, Types.INTEGER);
+            else stmt.setInt(2, employeeId);
 
-            if (employeeId == null) stmt.setNull(3, Types.INTEGER);
-            else stmt.setInt(3, employeeId);
+            stmt.setString(3, eventType);
+            stmt.setString(4, success ? "SUCCESS" : "FAILURE");
 
-            stmt.setString(4, eventType);
-            stmt.setString(5, success ? "SUCCESS" : "FAILURE");
-
-            if (details == null) stmt.setNull(6, Types.VARCHAR);
-            else stmt.setString(6, details.length() > 255
+            if (details == null) stmt.setNull(5, Types.VARCHAR);
+            else stmt.setString(5, details.length() > 255
                     ? details.substring(0, 255) : details);
 
             return stmt.executeUpdate() > 0;
