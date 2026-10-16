@@ -42,3 +42,26 @@ above the `main` method.
 
 Dependencies are committed in `lib/` and already wired up in
 `.vscode/settings.json`. Nothing to download or configure.
+
+
+### Apply the IAS 2 control scripts
+
+The Google Drive dump predates the IAS 2 security controls, so run both
+scripts in `db/` after importing it. In Workbench: File > Open SQL Script,
+then click the lightning bolt to execute.
+
+    db/01_create_audit_log.sql      creates the audit_log table
+    db/02_add_lockout_columns.sql   adds failedAttempts and lockedUntil to employee
+
+Confirm both applied:
+
+    SHOW TABLES LIKE 'audit_log';
+    SHOW COLUMNS FROM employee WHERE Field IN ('failedAttempts', 'lockedUntil');
+
+The second should return two rows.
+
+Without these the app still runs and logins still work, but audit logging and
+account lockout are silently inactive — the errors appear only in the console.
+
+Note: `02` can only be applied once. Re-running it returns "Duplicate column
+name", which is harmless and just means it is already in place.
